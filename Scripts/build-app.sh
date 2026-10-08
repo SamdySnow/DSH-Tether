@@ -182,12 +182,31 @@ else
   echo "note: no icon source found; the app will use the generic icon"
 fi
 
-# ---- Sign (ad-hoc) ----
+# ---- Sign ----
 # Ad-hoc signing keeps the app launchable locally and, importantly, keeps it
 # recognisable to macOS so the runtime icon override sticks.
-echo "==> Ad-hoc signing"
-codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || \
-  echo "note: codesign unavailable; the app still runs unsigned"
+#
+# Ad-hoc is sufficient on the machine that built it, but it is not a distributable
+# signature: a copy that acquires com.apple.quarantine (AirDrop, a download, most
+# zip transfers) is refused by Gatekeeper on the receiving Mac with a "damaged and
+# can't be opened" dialog. Set SIGN_IDENTITY (and optionally NOTARY_PROFILE) to
+# produce a build that travels.
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  echo "==> Signing as $SIGN_IDENTITY"
+  codesign --force --deep --options runtime --timestamp \
+    --sign "$SIGN_IDENTITY" "$APP_DIR"
+else
+  echo "==> Ad-hoc signing"
+  codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || \
+    echo "note: codesign unavailable; the app still runs unsigned"
+fi
+
+# A quarantine flag inherited from the build directory makes LaunchServices refuse
+# the app on first open, which is indistinguishable from a broken signature.
+xattr -dr com.apple.quarantine "$APP_DIR" 2>/dev/null || true
 
 # Finder caches icons per bundle path and per modification date. Without bumping
 # the bundle and clearing the cached entry, the old (or generic) icon keeps being
@@ -195,6 +214,50 @@ codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || \
 touch "$APP_DIR"
 /usr/bin/GetFileInfo "$APP_DIR" >/dev/null 2>&1 || true
 
+# ---- Notarize (optional) ----
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  if [[ -z "$SIGN_IDENTITY" ]]; then
+    echo "error: NOTARY_PROFILE requires SIGN_IDENTITY (notarization needs a Developer ID)" >&2
+    exit 1
+  fi
+  echo "==> Notarizing (keychain profile: $NOTARY_PROFILE)"
+  NOTARY_DIR="$(mktemp -d)"
+  ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$NOTARY_DIR/Tether.zip"
+  xcrun notarytool submit "$NOTARY_DIR/Tether.zip" \
+    --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP_DIR"
+  rm -rf "$NOTARY_DIR"
+fi
+
+# ---- Verify ----
+# The bundle itself can be perfectly intact and still be refused by Gatekeeper, so
+# the two checks are reported separately. Conflating them is how a signing problem
+# gets misread as a code problem.
+echo "==> Verifying signature"
+codesign --verify --strict --verbose=2 "$APP_DIR"
+
+echo "==> Assessing Gatekeeper"
+if spctl -a -t exec "$APP_DIR" >/dev/null 2>&1; then
+  echo "    accepted"
+else
+  cat <<'WARNING'
+    WARNING: Gatekeeper rejects this build.
+
+    Expected for an ad-hoc signature; not a defect in the app. It launches
+    normally on this machine, but a copy carrying com.apple.quarantine (AirDrop,
+    download, most zip transfers) is refused on another Mac as "damaged".
+
+    On the receiving Mac, clear the quarantine flag:
+        xattr -dr com.apple.quarantine /Applications/Tether.app
+
+    To build something that travels without that step, sign with a Developer ID
+    and notarize:
+        SIGN_IDENTITY="Developer ID Application: …" \
+        NOTARY_PROFILE=tether-notary ./Scripts/build-app.sh
+WARNING
+fi
+
 echo
 echo "Built: $APP_DIR"
 echo "Run:   open \"$APP_DIR\""
+echo "Pack:  ./Scripts/package-app.sh   (for handing the app to another Mac)"

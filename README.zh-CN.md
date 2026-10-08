@@ -12,6 +12,9 @@
 目标平台为 **macOS 27**，并使用了该系统中真正新增的 API（已对照 macOS 27.0 SDK
 验证 —— 见 [macOS 27 新特性](#macos-27-新特性)）。
 
+> **快速开始：请从源码构建** —— 详细步骤见 [从源码构建](#从源码构建)。这是推荐的安装
+> 方式，也是能避免应用在另一台 Mac 上被 Gatekeeper 拒绝的唯一途径。
+
 ## 功能一览
 
 | 需求 | 实现位置 |
@@ -109,18 +112,123 @@ Finder 中依然会看起来稍微内缩；那点间距来自系统，不是文�
 次启动时重新应用 —— `AppModel.bootstrap()` 调用 `IconManager.applyStoredIcon()`
 正是出于这个原因。
 
-## 构建
+## 从源码构建
+
+**请从源码构建，而不是传递预编译的 `.app`。** 在没有付费开发者 ID 的情况下，这是第二台
+Mac 上唯一能避免 Gatekeeper 弹出「已损坏，无法打开」的方式：编译器在本地**新建**文件，
+而新建的文件永远不会带上触发该弹窗的 `com.apple.quarantine` 属性。针对下方构建实测：
 
 ```sh
-./Scripts/build-app.sh          # produces dist/Tether.app
-open dist/Tether.app
+find dist -xattrname com.apple.quarantine | wc -l   # 0
 ```
 
-只构建、不打包：
+代价是每台机器都要编译一次。如果你更想直接分发一个现成的应用包，请改读
+[分发到另一台 Mac](#分发到另一台-mac)。
+
+### 前置条件
+
+| 条件 | 说明 |
+|---|---|
+| macOS 27 或更高 | 应用包声明了 `LSMinimumSystemVersion 27.0` |
+| Apple Silicon（arm64） | 二进制仅含 `arm64`，无法在 Intel Mac 上运行 |
+| **完整的 Xcode** | 不是裸的 Command Line Tools —— 见 [请使用 Xcode 的工具链](#重要请使用-xcode-的工具链) |
+| 磁盘空间 | 构建产物，以及 DSH 的 npm 缓存 —— 缓存预热后为 **1.2 GB**（见 [限制](#限制)） |
+
+Node.js **不是**构建的前置条件。它只在**运行**时需要，而应用会在首次启动时主动帮你安装
+（通过 Homebrew，或提供官方下载页链接）。
+
+### 操作步骤
+
+**1. 克隆仓库**
 
 ```sh
-swift build
+git clone https://github.com/SamdySnow/DSH-Tether.git
+cd DSH-Tether
 ```
+
+**2. 确认已安装 Xcode**
+
+```sh
+ls -d /Applications/Xcode.app/Contents/Developer
+```
+
+该路径必须存在；若不存在，请从 Mac App Store 安装 Xcode。
+
+你**不需要**修改 `xcode-select` 的设置。`Scripts/build-app.sh` 会自己把 `DEVELOPER_DIR`
+指向 Xcode，因此下面这个输出是预期且正常的：
+
+```sh
+xcode-select -p        # /Library/Developer/CommandLineTools
+```
+
+只有当你手动执行 `swift build` 时，工具链的选择才会有影响，此时需要加上
+[下方](#重要请使用-xcode-的工具链)所示的前缀。
+
+**3. 构建应用包**
+
+```sh
+./Scripts/build-app.sh
+```
+
+该脚本会以 release 模式编译、组装 `dist/Tether.app`、生成并复制图标、对应用包做 ad-hoc
+签名，最后进行校验。它已替你设置好 `DEVELOPER_DIR`，无需任何环境配置。成功时会以如下内容
+结束：
+
+```
+==> Verifying signature
+dist/Tether.app: valid on disk
+dist/Tether.app: satisfies its Designated Requirement
+==> Assessing Gatekeeper
+    WARNING: Gatekeeper rejects this build.
+...
+Built: /path/to/dist/Tether.app
+```
+
+这个 `WARNING` 是预期结果，**不是**构建失败 —— `spctl` 会拒绝每一个 ad-hoc 签名的应用。
+真正有意义的是它上面那行签名校验。其实际影响请见
+[分发到另一台 Mac](#分发到另一台-mac)。
+
+**4. 放到正式位置（可选，但推荐）**
+
+```sh
+cp -R dist/Tether.app /Applications/
+```
+
+从固定位置运行对 **Launch at login** 很重要，该功能需要真正的 `.app` 包；如果直接运行裸
+二进制，开关会自动禁用并说明原因。
+
+**5. 启动**
+
+```sh
+open dist/Tether.app          # 或者：open /Applications/Tether.app
+```
+
+控制台窗口会打开，服务随之自动启动。首次运行时 DSH 需要下载 300+ 个包的依赖树，耗时数
+分钟 —— 工具栏会显示已用时间计数器。如果缺少 Node.js，应用会询问是否安装。
+
+### 验证构建结果
+
+```sh
+# 图标已进入应用包
+ls dist/Tether.app/Contents/Resources/        # AppIcon.icns
+
+# 签名完整
+codesign --verify --strict dist/Tether.app     # 无输出，退出码 0
+
+# 没有任何文件继承隔离属性
+find dist -xattrname com.apple.quarantine | wc -l   # 0
+```
+
+### 只构建、不打包
+
+仅做编译检查、不生成 `.app`：
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+```
+
+裸的 `swift build` 只会产出一个可执行文件：没有图标、没有 bundle 标识符，也没有菜单栏
+集成。它只适合用来做编译检查 —— 能真正启动的是 `./Scripts/build-app.sh` 的产物。
 
 ### 重要：请使用 Xcode 的工具链
 
@@ -137,6 +245,78 @@ swift build
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
 ```
+
+### 分发到另一台 Mac
+
+`./Scripts/package-app.sh` 不做构建，它用 `ditto` 把已有的 `dist/Tether.app` 打包成
+`dist/Tether.zip`。
+
+当前构建是 **ad-hoc 签名**，在本机够用，但不足以分发给别人。只要副本带上了
+`com.apple.quarantine` 属性 —— 隔空投送、下载、多数 zip 传输都会 —— Gatekeeper 就会以
+「已损坏，无法打开」拒绝它。这个说法有误导性：应用包本身是完整的。在构建产物上实测：
+
+```sh
+codesign --verify --strict dist/Tether.app   # valid on disk, satisfies its DR
+spctl -a -t exec dist/Tether.app             # rejected
+```
+
+`build-app.sh` 每次构建后都会把这两项分开打印，因此签名问题不会被误判成代码问题。
+
+决定应用能否在另一台 Mac 上运行的**不是构建，而是传输方式**。同一份签名，只要抵达时
+不带该属性就能正常运行：
+
+| 传输方式 | 是否写入 `com.apple.quarantine` |
+|---|---|
+| 隔空投送、浏览器下载、聊天或邮件附件 | **会** |
+| U 盘、`scp` / `rsync`、SMB 或网络共享 | 不会 |
+
+「以前的版本能在另一台 Mac 上运行」并不能说明签名不同：`/Applications/Tether-beta.app`
+的签名特征（`Signature=adhoc`、`TeamIdentifier=not set`、`spctl … rejected`）与当前构建
+完全一致，区别只是它没有隔离属性。把同样的属性加到那份可用的副本上，Gatekeeper 一样会
+拒绝它。
+
+两种解法：
+
+```sh
+# 在接收方的 Mac 上清除隔离属性
+xattr -dr com.apple.quarantine /Applications/Tether.app
+```
+
+**执行时报 `Operation not permitted`。** 原因是 App Translocation，不是文件权限问题。
+只要隔离应用被启动过，macOS 就会从随机路径以只读方式运行它，并在该实例存活期间让原始
+应用包保持不可变，于是 `xattr` 会对包内每个文件报 `Errno 1`：
+
+| 应用状态 | `xattr -dr` 结果 |
+|---|---|
+| 有隔离属性，从未启动 | 成功 |
+| 有隔离属性，已启动且仍在运行 | **`Operation not permitted`** |
+| 有隔离属性，启动后已退出 | 成功 |
+| 无隔离属性，运行中 | 成功 |
+
+因此先退出应用（菜单栏 `⌘Q`，或在活动监视器中 `kill <pid>`），再清除属性。更好的做法是在
+**首次启动之前**清除 —— 应用只有被打开过才会进入被保护状态：
+
+```sh
+ditto /Volumes/USB/Tether.app /Applications/Tether.app
+xattr -dr com.apple.quarantine /Applications/Tether.app   # 在首次打开之前
+open /Applications/Tether.app
+```
+
+如果应用属于其他账户（`ls -l` 显示所有者不是你），请在命令前加 `sudo`。另外在 macOS 14
+及更高版本中，终端可能还需要在 **系统设置 → 隐私与安全性 → App 管理** 中获得授权，才能修改
+`/Applications` 下的任何应用包。
+
+```sh
+# 或者构建一个无需该步骤即可分发的版本
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE=tether-notary \
+./Scripts/build-app.sh
+```
+
+notary profile 用 `xcrun notarytool store-credentials tether-notary` 创建一次即可。
+
+同时请确认接收方的系统版本：应用包声明了 `LSMinimumSystemVersion 27.0` 且只包含
+`arm64`，因此无法在 Intel Mac 或低于 27 的 macOS 上运行。
 
 ## 服务是如何启动的
 

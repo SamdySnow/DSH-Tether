@@ -13,6 +13,11 @@ of. The app keeps the DSH service tethered to your menu bar.
 Targets **macOS 27**, and uses APIs that are genuinely new there (verified against
 the macOS 27.0 SDK — see [macOS 27 features](#macos-27-features)).
 
+> **Getting started:** build it from source — see
+> [Build from source](#build-from-source) for the step-by-step instructions. This
+> is the recommended path, and it is the one that avoids Gatekeeper refusing the
+> app on another Mac.
+
 ## What it does
 
 | Requirement | Where it lives |
@@ -120,18 +125,132 @@ bundle. macOS does not persist that override, so the choice is stored as a
 security-scoped bookmark and reapplied at launch — `AppModel.bootstrap()` calls
 `IconManager.applyStoredIcon()` for exactly this reason.
 
-## Build
+## Build from source
+
+**Build from source rather than passing a prebuilt `.app` around.** On a second
+Mac this is the only approach that avoids the Gatekeeper "damaged and can't be
+opened" dialog without a paid Developer ID: the compiler creates fresh files
+locally, and a fresh file never carries the `com.apple.quarantine` attribute that
+triggers that dialog. Measured on the build below:
 
 ```sh
-./Scripts/build-app.sh          # produces dist/Tether.app
-open dist/Tether.app
+find dist -xattrname com.apple.quarantine | wc -l   # 0
 ```
 
-For a plain build without bundling:
+The trade-off is one compile per machine. If you would rather ship a single binary,
+read [Distributing to another Mac](#distributing-to-another-mac) instead.
+
+### Requirements
+
+| Requirement | Detail |
+|---|---|
+| macOS 27 or later | The bundle declares `LSMinimumSystemVersion 27.0` |
+| Apple Silicon (arm64) | The binary is `arm64` only and will not launch on Intel |
+| **Full Xcode** | Installed at `/Applications/Xcode.app`. The bare Command Line Tools cannot compile SwiftUI macros — see [use Xcode's toolchain](#important-use-xcodes-toolchain) |
+| Disk | Build output, plus the DSH npm cache — **1.2 GB** on a warm cache (see [Limitations](#limitations)) |
+
+Node.js is **not** a prerequisite for building. You need it at *run time*, and the
+app offers to install it for you on first launch (Homebrew, or a link to the
+official download page).
+
+### Steps
+
+**1. Clone the repository**
 
 ```sh
-swift build
+git clone https://github.com/SamdySnow/DSH-Tether.git
+cd DSH-Tether
 ```
+
+**2. Confirm Xcode is installed**
+
+```sh
+ls -d /Applications/Xcode.app/Contents/Developer
+```
+
+That path must exist; install Xcode from the Mac App Store if it does not.
+
+You do **not** need to change your `xcode-select` setting. `Scripts/build-app.sh`
+points `DEVELOPER_DIR` at Xcode itself, so this is expected and fine:
+
+```sh
+xcode-select -p        # /Library/Developer/CommandLineTools
+```
+
+The toolchain selection only matters when you run `swift build` by hand, which
+needs the prefix shown [below](#important-use-xcodes-toolchain).
+
+**3. Build the app bundle**
+
+```sh
+./Scripts/build-app.sh
+```
+
+The script compiles in release mode, assembles `dist/Tether.app`, generates and
+copies the icon, ad-hoc signs the bundle, and then verifies it. It sets
+`DEVELOPER_DIR` for you, so no environment setup is needed. A successful run ends
+with:
+
+```
+==> Verifying signature
+dist/Tether.app: valid on disk
+dist/Tether.app: satisfies its Designated Requirement
+==> Assessing Gatekeeper
+    WARNING: Gatekeeper rejects this build.
+...
+Built: /path/to/dist/Tether.app
+```
+
+The `WARNING` is expected and is **not** a failure — `spctl` rejects every ad-hoc
+signed app. The signature check above it is the one that matters. See
+[Distributing to another Mac](#distributing-to-another-mac) for what that means in
+practice.
+
+**4. Move it into place (optional, but recommended)**
+
+```sh
+cp -R dist/Tether.app /Applications/
+```
+
+Running from a stable location matters for **Launch at login**, which needs a real
+`.app` bundle; the toggle disables itself and explains why when you run the raw
+binary instead.
+
+**5. Launch it**
+
+```sh
+open dist/Tether.app          # or: open /Applications/Tether.app
+```
+
+The console window opens and the service starts automatically. On the very first
+run, DSH downloads a 300+ package dependency tree, which takes minutes — the
+toolbar shows an elapsed-time counter. If Node.js is missing, the app asks whether
+to install it instead.
+
+### Verifying the build
+
+```sh
+# The icon made it into the bundle
+ls dist/Tether.app/Contents/Resources/        # AppIcon.icns
+
+# The signature is intact
+codesign --verify --strict dist/Tether.app     # no output, exit 0
+
+# Nothing inherited a quarantine flag
+find dist -xattrname com.apple.quarantine | wc -l   # 0
+```
+
+### Plain build without bundling
+
+For a compile check with no `.app`:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+```
+
+A raw `swift build` produces a bare executable: no icon, no bundle identifier, and
+no menu bar integration. Use it for compile checks only — `./Scripts/build-app.sh`
+is what produces something you can launch.
 
 ### Important: use Xcode's toolchain
 
@@ -148,6 +267,87 @@ If you build by hand and see that error, prefix the command:
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
 ```
+
+### Distributing to another Mac
+
+`./Scripts/package-app.sh` does not build anything; it packages the existing
+`dist/Tether.app` into `dist/Tether.zip` with `ditto`.
+
+The build is **ad-hoc signed**, which is enough for the machine that produced it
+but not for anyone else. Once a copy acquires the `com.apple.quarantine` attribute
+— AirDrop, a download, most zip transfers — Gatekeeper refuses it with a "damaged
+and can't be opened" dialog. That wording is misleading: the bundle is intact.
+Measured on the built app:
+
+```sh
+codesign --verify --strict dist/Tether.app   # valid on disk, satisfies its DR
+spctl -a -t exec dist/Tether.app             # rejected
+```
+
+`build-app.sh` prints those two results separately after every build, so a signing
+problem is not misread as a code problem.
+
+The build is not what decides whether the app runs on the other Mac — the transfer
+is. The *same* signature runs normally when it arrives without the attribute:
+
+| Transfer method | Sets `com.apple.quarantine`? |
+|---|---|
+| AirDrop, browser download, chat or email attachment | **Yes** |
+| USB drive, `scp` / `rsync`, SMB or network share | No |
+
+An earlier build that "worked on the other Mac" is not evidence of a different
+signature: `/Applications/Tether-beta.app` reports the same `Signature=adhoc`,
+`TeamIdentifier=not set` and `spctl … rejected` as the current build, and simply
+carries no quarantine flag. Applying the attribute to that same working copy makes
+Gatekeeper reject it too.
+
+Two ways out:
+
+```sh
+# On the receiving Mac, clear the flag
+xattr -dr com.apple.quarantine /Applications/Tether.app
+```
+
+**`Operation not permitted` when clearing the flag.** This is App Translocation,
+not a file-permission problem. Whenever a quarantined app is launched, macOS runs
+it read-only from a randomised path and keeps the original bundle immutable for as
+long as that instance is alive, so `xattr` fails with `Errno 1` on every file:
+
+| State of the app | `xattr -dr` |
+|---|---|
+| Quarantined, never launched | succeeds |
+| Quarantined, launched and still running | **`Operation not permitted`** |
+| Quarantined, launched and quit | succeeds |
+| Not quarantined, running | succeeds |
+
+Quit the app first (`⌘Q` from the menu bar, or `kill <pid>` from Activity
+Monitor), then clear the flag. Better still, clear it **before** the first launch —
+an app only becomes protected by being opened:
+
+```sh
+ditto /Volumes/USB/Tether.app /Applications/Tether.app
+xattr -dr com.apple.quarantine /Applications/Tether.app   # before the first open
+open /Applications/Tether.app
+```
+
+If the app is owned by another account (`ls -l` shows an owner that is not you),
+prefix the command with `sudo`. On macOS 14 and later, Terminal may also need
+permission under **System Settings → Privacy & Security → App Management** before
+it can modify any bundle in `/Applications`.
+
+```sh
+# Or produce a build that travels without that step
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE=tether-notary \
+./Scripts/build-app.sh
+```
+
+The notary profile is created once with
+`xcrun notarytool store-credentials tether-notary`.
+
+Check the receiving Mac's OS version as well: the bundle declares
+`LSMinimumSystemVersion 27.0` and is `arm64` only, so it will not launch on an
+Intel Mac or on a macOS older than 27.
 
 ## How the service is launched
 
