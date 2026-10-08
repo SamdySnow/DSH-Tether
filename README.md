@@ -22,16 +22,22 @@ the macOS 27.0 SDK — see [macOS 27 features](#macos-27-features)).
 | Menu bar icon, click to expand, easy shutdown | `Views/StatusMenu.swift` (`MenuBarExtra`) |
 | Custom port | `SettingsStore.port`, editable in the toolbar and in Settings |
 | Change the app icon in Settings | `Core/IconManager.swift` + `IconSettingsPane` |
-| Bundled app icon | Generated from `Sources/bitmap/` by `Scripts/make-icon.swift` |
+| Bundled app icon | `Resources/icon.png` rendered by `Scripts/make-icon.swift` into `Resources/AppIcon.icns` (both committed) |
 
 ![icon](Resources/AppIcon.icns)
 
 ## App icon
 
-The bundle icon is **generated**, not committed. `Scripts/make-icon.swift` renders
-the source bitmap into a `.iconset`, and `iconutil` packs it into
-`Resources/AppIcon.icns`. `Scripts/build-app.sh` regenerates it whenever anything
-relevant changes, so the artwork stays the single source of truth.
+The bundle icon is **generated from committed artwork**. `Scripts/make-icon.swift`
+renders the source bitmap into a `.iconset`, and `iconutil` packs it into
+`Resources/AppIcon.icns`. Both the PNG and the built `.icns` are committed, so a
+fresh clone assembles an app that already carries its icon. `Scripts/build-app.sh`
+regenerates the `.icns` whenever the artwork or the geometry changes, so the PNG
+stays the single source of truth.
+
+Committing `Resources/` is deliberate: while it was excluded, a clone built an app
+with the generic system icon, and the build still reported success — a defect that
+only surfaced on someone else's machine.
 
 ### The source image is discovered, not hardcoded
 

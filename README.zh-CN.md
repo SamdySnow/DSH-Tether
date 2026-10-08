@@ -21,15 +21,19 @@
 | 菜单栏图标、点击展开、一键停止 | `Views/StatusMenu.swift`（`MenuBarExtra`） |
 | 自定义端口 | `SettingsStore.port`，可在工具栏和「设置」中编辑 |
 | 在「设置」中更换应用图标 | `Core/IconManager.swift` + `IconSettingsPane` |
-| 随包携带的应用图标 | 由 `Scripts/make-icon.swift` 从 `Sources/bitmap/` 生成 |
+| 随包携带的应用图标 | `Resources/icon.png` 经 `Scripts/make-icon.swift` 渲染为 `Resources/AppIcon.icns`（两者均已提交） |
 
 ![icon](Resources/AppIcon.icns)
 
 ## 应用图标
 
-包内图标是**生成产物**，不纳入版本控制。`Scripts/make-icon.swift` 把源位图渲染成
-`.iconset`，再由 `iconutil` 打包为 `Resources/AppIcon.icns`。只要相关文件有变化，
-`Scripts/build-app.sh` 都会重新生成它，因此美术资源始终是唯一的真实来源。
+包内图标由**已提交的美术资源生成**。`Scripts/make-icon.swift` 把源位图渲染成
+`.iconset`，再由 `iconutil` 打包为 `Resources/AppIcon.icns`。PNG 源图与生成出的 `.icns`
+都已纳入版本控制，因此新克隆的仓库构建出的应用自带图标。只要美术资源或几何设置有变化，
+`Scripts/build-app.sh` 就会重新生成 `.icns`，因此 PNG 仍是唯一的真实来源。
+
+提交 `Resources/` 是有意为之：此前它被排除在外，克隆后构建出的应用只有系统默认图标，
+而构建仍然报成功 —— 这个缺陷只会在别人的机器上暴露。
 
 ### 源图片是自动发现的，不是硬编码的
 

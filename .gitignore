@@ -6,13 +6,11 @@ Package.resolved
 # Build output
 dist/
 
-# Generated app icon — rebuilt from Sources/bitmap/ by Scripts/build-app.sh
-Resources/AppIcon.icns
-Resources/.icon-geometry
-Resources/.icon-source
-
-# Supplied icon artwork
-Resources/icon.png
-
-# macOS
+# Native macOS
 .DS_Store
+
+# Note: Resources/ is committed on purpose. Excluding it meant a fresh clone had
+# neither the artwork nor the built .icns, so the app was assembled with a generic
+# icon — a defect that only showed up on someone else's machine. build-app.sh
+# still regenerates AppIcon.icns whenever the artwork or geometry changes, so the
+# PNG remains the single source of truth.
