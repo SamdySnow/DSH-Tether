@@ -21,6 +21,45 @@ struct ConsoleView: View {
             placement: .toolbar,
             prompt: model.string(.searchConsolePrompt)
         )
+        .confirmationDialog(
+            model.string(.nodeMissingTitle),
+            isPresented: $model.isNodeInstallPromptPresented,
+            titleVisibility: .visible
+        ) {
+            Button(model.string(.nodeInstallAction)) {
+                Task { await model.installNode() }
+            }
+            Button(model.string(.nodeInstallFromWebsite)) {
+                model.openNodeWebsite()
+            }
+            Button(model.string(.notNow), role: .cancel) {}
+        } message: {
+            Text(model.string(.nodeMissingMessage))
+        }
+        .alert(item: $model.nodeSetupAlert) { alert in
+            switch alert {
+            case .homebrewMissing:
+                Alert(
+                    title: Text(model.string(.homebrewMissingTitle)),
+                    message: Text(model.string(.homebrewMissingMessage)),
+                    dismissButton: .default(Text(model.string(.openHomebrewWebsite))) {
+                        model.openHomebrewWebsite()
+                    }
+                )
+            case .installed:
+                Alert(
+                    title: Text(model.string(.nodeInstalledTitle)),
+                    message: Text(model.string(.nodeInstalledMessage)),
+                    dismissButton: .default(Text(model.string(.ok)))
+                )
+            case .installFailed(let details):
+                Alert(
+                    title: Text(model.string(.nodeInstallFailedTitle)),
+                    message: Text(model.string(.nodeInstallFailedMessage, details)),
+                    dismissButton: .default(Text(model.string(.ok)))
+                )
+            }
+        }
     }
 }
 
@@ -52,6 +91,14 @@ private struct ConsoleToolbar: View {
             }
 
             Spacer()
+
+            if model.isNodeInstalling {
+                ProgressView()
+                    .controlSize(.small)
+                Text(model.string(.nodeInstalling))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             PortStepperField(settings: model.settings) {
                 Task { await model.applyPortAndRestartIfRunning() }

@@ -46,6 +46,9 @@ enum ExecutionTargetResolver {
         directories.append("/usr/local/bin")
         directories.append("/usr/bin")
         directories.append("/bin")
+        directories.append(contentsOf: (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init))
 
         return directories
     }
@@ -119,4 +122,22 @@ enum ExecutionTargetResolver {
 
     /// `true` when the resolver can drive DSH at all.
     static var isRuntimeAvailable: Bool { resolve() != nil }
+
+    /// `true` when a Node executable exists, even if its npm entry point is not
+    /// in a layout this app can use.
+    static var isNodeInstalled: Bool {
+        let fileManager = FileManager.default
+
+        if let override = ProcessInfo.processInfo.environment[ExecutionTarget.nodeOverrideKey],
+           !override.isEmpty {
+            let expanded = (override as NSString).expandingTildeInPath
+            if fileManager.isExecutableFile(atPath: expanded) {
+                return true
+            }
+        }
+
+        return searchDirectories.contains { directory in
+            fileManager.isExecutableFile(atPath: "\(directory)/node")
+        }
+    }
 }

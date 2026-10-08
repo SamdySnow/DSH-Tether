@@ -167,6 +167,9 @@ fnm、asdf 和 nvm 的常见位置。可以用 `DSH_HARNESS_NODE` 覆盖：
 DSH_HARNESS_NODE=/path/to/node open dist/Tether.app
 ```
 
+如果未找到 Node.js，Tether 会提供通过 Homebrew 安装或打开 Node.js 官网的选项。
+需要预先安装 Homebrew；只有在你确认后，应用才会运行 `brew install node`。
+
 ### 停止服务
 
 `npx` 意味着你生成的进程只是整条进程链的根。只对根发信号，真正的服务器仍会占着端口，

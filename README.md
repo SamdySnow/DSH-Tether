@@ -182,6 +182,10 @@ searches Homebrew, `/usr/local`, Volta, fnm, asdf and nvm locations directly. Se
 DSH_HARNESS_NODE=/path/to/node open dist/Tether.app
 ```
 
+If Node.js is not found, Tether offers either to install it with Homebrew or open
+the official Node.js download page. Homebrew must already be installed; the app
+runs `brew install node` only after you confirm.
+
 ### Shutdown
 
 `npx` means the process you spawn is only the root of a chain. Signalling just the

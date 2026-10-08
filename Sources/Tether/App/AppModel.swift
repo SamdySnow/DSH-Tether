@@ -18,6 +18,9 @@ final class AppModel {
     private(set) var status: ServiceStatus = .idle
     private(set) var processIdentifier: pid_t?
     private(set) var isConsoleFollowingOutput = true
+    private(set) var isNodeInstalling = false
+    var isNodeInstallPromptPresented = false
+    var nodeSetupAlert: NodeSetupAlert?
 
     /// Wall-clock time since the current start attempt began, for the UI.
     ///
@@ -55,6 +58,7 @@ final class AppModel {
     private var consumptionTasks: [Task<Void, Never>] = []
     private var seenEntryIDs = Set<UUID>()
     private var didPerformInitialStart = false
+    private var shouldStartAfterNodeInstall = false
 
     init() {
         self.settings = SettingsStore()
@@ -187,6 +191,14 @@ final class AppModel {
     /// so a custom icon chosen in Settings did not survive a relaunch.
     func bootstrap() async {
         icons.applyStoredIcon()
+
+        guard ExecutionTargetResolver.isNodeInstalled else {
+            didPerformInitialStart = true
+            shouldStartAfterNodeInstall = settings.automaticallyStartsService
+            isNodeInstallPromptPresented = true
+            return
+        }
+
         await performInitialStartIfNeeded()
     }
 
@@ -211,6 +223,11 @@ final class AppModel {
     // MARK: - Commands
 
     func start() async {
+        guard ExecutionTargetResolver.isNodeInstalled else {
+            shouldStartAfterNodeInstall = true
+            isNodeInstallPromptPresented = true
+            return
+        }
         await service.start(port: settings.port)
         await refreshProcessIdentifier()
     }
@@ -221,14 +238,81 @@ final class AppModel {
     }
 
     func restart() async {
+        guard ExecutionTargetResolver.isNodeInstalled else {
+            shouldStartAfterNodeInstall = true
+            isNodeInstallPromptPresented = true
+            return
+        }
         await service.restart(port: settings.port)
         await refreshProcessIdentifier()
+    }
+
+    func installNode() async {
+        guard !isNodeInstalling else { return }
+        guard HomebrewNodeInstaller.brewPath() != nil else {
+            nodeSetupAlert = .homebrewMissing
+            return
+        }
+
+        isNodeInstalling = true
+        defer { isNodeInstalling = false }
+
+        do {
+            _ = try await Task.detached(priority: .userInitiated) {
+                try HomebrewNodeInstaller.install()
+            }.value
+
+            guard ExecutionTargetResolver.isRuntimeAvailable else {
+                nodeSetupAlert = .installFailed(L10n.text(.nodeInstallNotFound))
+                return
+            }
+
+            let shouldStartService = shouldStartAfterNodeInstall
+            shouldStartAfterNodeInstall = false
+            nodeSetupAlert = .installed
+            if shouldStartService {
+                await start()
+            }
+        } catch let error as NodeInstallError {
+            switch error {
+            case .homebrewNotFound:
+                nodeSetupAlert = .homebrewMissing
+            case .brewFailed(let details):
+                nodeSetupAlert = .installFailed(details)
+            }
+        } catch {
+            nodeSetupAlert = .installFailed(error.localizedDescription)
+        }
+    }
+
+    func openHomebrewWebsite() {
+        guard let url = URL(string: "https://brew.sh") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func openNodeWebsite() {
+        guard let url = URL(string: "https://nodejs.org/en/download") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     /// Stops the service and terminates the app.
     func quit() async {
         await service.stop()
         NSApplication.shared.terminate(nil)
+    }
+
+    enum NodeSetupAlert: Identifiable {
+        case homebrewMissing
+        case installed
+        case installFailed(String)
+
+        var id: String {
+            switch self {
+            case .homebrewMissing: "homebrewMissing"
+            case .installed: "installed"
+            case .installFailed: "installFailed"
+            }
+        }
     }
 
     /// Relaunches on the current settings, after making sure the port is free.

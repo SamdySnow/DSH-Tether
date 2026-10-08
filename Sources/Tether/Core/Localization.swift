@@ -192,6 +192,23 @@ enum Loc: Sendable {
     case svcPortReleaseFailed
     case appAutoStartDisabled
     case exportLogPanelTitle
+
+    // Node setup
+    case nodeMissingTitle
+    case nodeMissingMessage
+    case nodeInstallAction
+    case nodeInstallFromWebsite
+    case notNow
+    case homebrewMissingTitle
+    case homebrewMissingMessage
+    case openHomebrewWebsite
+    case nodeInstalling
+    case nodeInstalledTitle
+    case nodeInstalledMessage
+    case nodeInstallFailedTitle
+    case nodeInstallFailedMessage
+    case nodeInstallNotFound
+    case ok
 }
 
 /// Resolves `Loc` keys to text.
@@ -437,4 +454,28 @@ private let entries: [(key: Loc, english: String, chinese: String)] = [
     (.appAutoStartDisabled, "automatic start is disabled in Settings",
      "设置中已禁用自动启动"),
     (.exportLogPanelTitle, "Export DSH Console Log", "导出 DSH 控制台日志"),
+
+    // Node setup
+    (.nodeMissingTitle, "Node.js is required", "需要 Node.js"),
+    (.nodeMissingMessage,
+     "Tether needs Node.js to run DSH. Would you like to install it with Homebrew?",
+     "Tether 需要 Node.js 才能运行 DSH。是否使用 Homebrew 安装？"),
+    (.nodeInstallAction, "Install Node.js", "安装 Node.js"),
+    (.nodeInstallFromWebsite, "Install from Node.js Website…", "前往 Node.js 官网安装…"),
+    (.notNow, "Not Now", "暂不安装"),
+    (.homebrewMissingTitle, "Homebrew is not installed", "尚未安装 Homebrew"),
+    (.homebrewMissingMessage,
+     "Install Homebrew first, then try installing Node.js again.",
+     "请先安装 Homebrew，然后重新尝试安装 Node.js。"),
+    (.openHomebrewWebsite, "Open Homebrew Website", "打开 Homebrew 官网"),
+    (.nodeInstalling, "Installing Node.js with Homebrew…", "正在使用 Homebrew 安装 Node.js…"),
+    (.nodeInstalledTitle, "Node.js installed", "Node.js 已安装"),
+    (.nodeInstalledMessage, "Node.js is ready to use.", "Node.js 已就绪。"),
+    (.nodeInstallFailedTitle, "Could not install Node.js", "无法安装 Node.js"),
+    (.nodeInstallFailedMessage, "Homebrew reported an error:\n%@",
+     "Homebrew 返回错误：\n%@"),
+    (.nodeInstallNotFound,
+     "Homebrew finished, but Tether could not locate the Node.js/npm runtime.",
+     "Homebrew 已完成安装，但 Tether 仍未找到可用的 Node.js/npm 运行时。"),
+    (.ok, "OK", "好"),
 ]
