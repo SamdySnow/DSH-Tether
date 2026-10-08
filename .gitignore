@@ -1,0 +1,18 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Build output
+dist/
+
+# Generated app icon — rebuilt from Sources/bitmap/ by Scripts/build-app.sh
+Resources/AppIcon.icns
+Resources/.icon-geometry
+Resources/.icon-source
+
+# Supplied icon artwork
+Resources/icon.png
+
+# macOS
+.DS_Store

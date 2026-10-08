@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:deepseek-harness}",
+            "name": "Debug DSHHarness",
+            "target": "DSHHarness",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug DSHHarness"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:deepseek-harness}",
+            "name": "Release DSHHarness",
+            "target": "DSHHarness",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release DSHHarness"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DSH-Tether}",
+            "name": "Debug Tether",
+            "target": "Tether",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Tether"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DSH-Tether}",
+            "name": "Release Tether",
+            "target": "Tether",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Tether"
+        }
+    ]
+}
